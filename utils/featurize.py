@@ -14,7 +14,11 @@ def get_logprobs(file):
     with open(file) as f:
         for line in f.read().strip().split("\n"):
             line = line.split(" ")
-            logprobs.append(np.exp(-float(line[1])))
+            try:
+                logprobs.append(np.exp(-float(line[1])))
+            except:
+                print(file)
+                print(line)
 
     return np.array(logprobs)
 
