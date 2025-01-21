@@ -123,7 +123,7 @@ def score_ngram(doc, model, tokenizer, n=3):
     """
     scores = []
     tokens = (
-        tokenizer(doc.strip())[1:] if n == 1 else (n - 2) * [2] + tokenizer(doc.strip())
+        tokenizer(doc)[1:] if n == 1 else (n - 2) * [2] + tokenizer(doc)
     )
 
     for i in ngrams(tokens, n):
@@ -134,7 +134,7 @@ def score_ngram(doc, model, tokenizer, n=3):
 
 def get_all_logprobs(
     generate_dataset,
-    preprocess=lambda x: x.strip(),
+    preprocess=lambda x: x,
     verbose=True,
     trigram=None,
     tokenizer=None,
@@ -153,8 +153,8 @@ def get_all_logprobs(
         if "logprobs" in file:
             continue
 
-        with open(file, "r") as f:
-            doc = preprocess(f.read())
+        with open(file, "rb") as f:
+            doc = preprocess(f.read().decode())
         falcon_logprobs[file] = get_logprobs(
             convert_file_to_logprob_file(file, "falcon-7b") # ***
         )[:num_tokens]
