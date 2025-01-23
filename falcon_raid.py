@@ -23,7 +23,18 @@ from nltk.tokenize import word_tokenize
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, roc_auc_score
 
-domains = ["abstracts", "books", "news", "poetry", "recipes", "reddit", "reviews", "wiki"]
+
+results_folder = "results_raid_500k"
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--domain", type=str, required=True)
+parser.add_argument("--feature_select", action="store_true")
+parser.add_argument("--classify", action="store_true")
+parser.add_argument("--do_sample", action="store_true")
+args = parser.parse_args()
+
+domains = [ args.domain ]
 
 train_datasets = [
     Dataset("normal", f"data/raid_500k_{d}/train/{t}")
@@ -34,6 +45,8 @@ test_datasets = [
     for d in domains for t in ["human", "gpt"]
 ]
 
+'''
+# output of --feature_select
 best_features = [
     "trigram-logprobs v-add unigram-logprobs v-> falcon-logprobs s-var",
     "trigram-logprobs v-div unigram-logprobs v-div trigram-logprobs s-avg-top-25",
@@ -46,16 +59,11 @@ best_features = [
     "trigram-logprobs v-> unigram-logprobs v-add falcon-logprobs s-avg",
     "trigram-logprobs v-div llama-logprobs v-div trigram-logprobs s-min",
 ]
+'''
 
 models = ["gpt"]
 vectors = ["falcon-logprobs", "unigram-logprobs", "trigram-logprobs"]
 
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--feature_select", action="store_true")
-parser.add_argument("--classify", action="store_true")
-
-args = parser.parse_args()
 tokenizer = AutoTokenizer.from_pretrained("tiiuae/falcon-7b")
 
 print("Constructing trigram")
@@ -184,6 +192,12 @@ test_labels = test_generate_dataset_fn(
 # test size: 500k
 train = np.arange(train_labels.size)
 test = np.arange(test_labels.size)
+
+# sample 6000
+sample_size = 6000
+if args.do_sample:
+    np.random.seed(0)
+    train = np.random.choice(train, size=sample_size, replace=False)
 print(f"{len(train)=}, {len(test)=}")
 
 
@@ -267,7 +281,18 @@ if args.feature_select:
             lambda file: calc_features(file, exp)
         ).reshape(-1, 1)
 
-    select_features(exp_to_data, train_labels, verbose=True, to_normalize=True, indices=train)
+    best_features = select_features(exp_to_data, train_labels, verbose=True, to_normalize=True, indices=train)
+    print(best_features)
+    
+    # save best features
+    outfolder_name = "best_features_{args.domain}"
+    if args.do_sample:
+        outfolder_name += "_sample"
+    outfolder_name += ".txt"
+    with open(os.path.join(results_folder, outfolder_name), "w") as f:
+        for feat in best_features:
+            f.write(feat + "\n")
+
 
 if args.classify:
     (
