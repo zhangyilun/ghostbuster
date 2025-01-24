@@ -25,7 +25,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, roc_auc_score
 
 
-results_folder = "results_raid_500k"
+results_folder = "results_m4gt"
 os.makedirs(results_folder, exist_ok=True)
 
 parser = argparse.ArgumentParser()
@@ -40,11 +40,11 @@ args = parser.parse_args()
 domains = [ args.domain ]
 
 train_datasets = [
-    Dataset("normal", f"data/raid_500k_{d}/train/{t}")
+    Dataset("normal", f"data/m4gt_{d}/train/{t}")
     for d in domains for t in ["human", "gpt"]
 ]
 test_datasets = [
-    Dataset("normal", f"data/raid_500k_{d}/test/{t}")
+    Dataset("normal", f"data/m4gt_{d}/test/{t}")
     for d in domains for t in ["human", "gpt"]
 ]
 
@@ -379,7 +379,7 @@ if args.classify:
         pickle.dump({"model": model, "mu": mu, "sigma": sigma}, f)
 
     # save test set predictions
-    pred_folder = "predictions_raid_500k/"
+    pred_folder = "predictions_m4gt/"
     pred_file = args.domain + ("_sample" if args.do_sample else "") + ".preds"
     os.makedirs(pred_folder, exist_ok=True)
     pd.DataFrame({
