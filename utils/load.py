@@ -63,7 +63,10 @@ def get_generate_dataset(*datasets: Dataset):
         for file in files:
             if "logprobs" in file:
                 continue
-            data.append(featurize(file))
+            try:
+                data.append(featurize(file))
+            except Exception as e:
+                print(e, file)
         return np.array(data)
 
     return generate_dataset
