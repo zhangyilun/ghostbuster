@@ -15,6 +15,7 @@ import math
 import tqdm
 import numpy as np
 import dill as pickle
+import pandas as pd
 
 from nltk.util import ngrams
 from nltk.corpus import brown
@@ -25,13 +26,15 @@ from sklearn.metrics import f1_score, roc_auc_score
 
 
 results_folder = "results_raid_500k"
-
+os.makedirs(results_folder, exist_ok=True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--domain", type=str, required=True)
 parser.add_argument("--feature_select", action="store_true")
-parser.add_argument("--classify", action="store_true")
 parser.add_argument("--do_sample", action="store_true")
+
+parser.add_argument("--classify", action="store_true")
+parser.add_argument("--features", type=str, help="File containing features line by line")
 args = parser.parse_args()
 
 domains = [ args.domain ]
@@ -45,21 +48,6 @@ test_datasets = [
     for d in domains for t in ["human", "gpt"]
 ]
 
-'''
-# output of --feature_select
-best_features = [
-    "trigram-logprobs v-add unigram-logprobs v-> falcon-logprobs s-var",
-    "trigram-logprobs v-div unigram-logprobs v-div trigram-logprobs s-avg-top-25",
-    "unigram-logprobs v-mul falcon-logprobs s-avg",
-    "trigram-logprobs v-mul unigram-logprobs v-div trigram-logprobs s-avg",
-    "trigram-logprobs v-< unigram-logprobs v-mul falcon-logprobs s-avg-top-25",
-    "trigram-logprobs v-mul unigram-logprobs v-sub falcon-logprobs s-min",
-    "trigram-logprobs v-mul unigram-logprobs s-avg",
-    "trigram-logprobs v-< unigram-logprobs v-sub falcon-logprobs s-avg",
-    "trigram-logprobs v-> unigram-logprobs v-add falcon-logprobs s-avg",
-    "trigram-logprobs v-div llama-logprobs v-div trigram-logprobs s-min",
-]
-'''
 
 models = ["gpt"]
 vectors = ["falcon-logprobs", "unigram-logprobs", "trigram-logprobs"]
@@ -188,8 +176,13 @@ train_labels = train_generate_dataset_fn(
 test_labels = test_generate_dataset_fn(
     lambda file: 1 if "gpt" in file else 0
 )
-# train size: 105443
-# test size: 500k
+
+# get ids for saving purpose
+test_ids = test_generate_dataset_fn(
+    lambda file: file.split("/")[-1][:-4]
+)
+
+# indices, but we use all anyways
 train = np.arange(train_labels.size)
 test = np.arange(test_labels.size)
 
@@ -243,12 +236,12 @@ if args.feature_select:
     (
         train_falcon_logprobs,
         train_trigram_logprobs,
-        train_unigram_logprobs,
+        train_unigram_logprobs
     ) = get_all_logprobs(
         train_generate_dataset_fn,
         verbose=True,
-        tokenizer=lambda x: tokenizer(x)["input_ids"],
-        trigram=trigram,
+        tokenizer=lambda x: tokenizer(x).input_ids,
+        trigram=trigram
     )
 
     train_vector_map = {
@@ -285,7 +278,7 @@ if args.feature_select:
     print(best_features)
     
     # save best features
-    outfolder_name = "best_features_{args.domain}"
+    outfolder_name = f"best_features_{args.domain}"
     if args.do_sample:
         outfolder_name += "_sample"
     outfolder_name += ".txt"
@@ -295,21 +288,48 @@ if args.feature_select:
 
 
 if args.classify:
+    if not args.features:
+        raise("You must provide --features <fpath> with file containing features to use.")
+        sys.exit(1)
+
+    print(f"Evaluating domain: {args.domain}")
+    print(f"Features to use: {args.features}")
+    
+    with open(args.features) as f:
+        best_features = f.readlines()
+        best_features = [l.strip() for l in best_features] # get rid of tailing \n
+    print(best_features)
+
     (
-        falcon_logprobs,
-        trigram_logprobs,
-        unigram_logprobs,
+        train_falcon_logprobs,
+        train_trigram_logprobs,
+        train_unigram_logprobs
     ) = get_all_logprobs(
         train_generate_dataset_fn,
         verbose=True,
-        tokenizer=lambda x: tokenizer(x)["input_ids"],
-        trigram=trigram,
+        tokenizer=lambda x: tokenizer(x).input_ids,
+        trigram=trigram
+    )
+    (
+        test_falcon_logprobs,
+        test_trigram_logprobs,
+        test_unigram_logprobs
+    ) = get_all_logprobs(
+        test_generate_dataset_fn,
+        verbose=True,
+        tokenizer=lambda x: tokenizer(x).input_ids,
+        trigram=trigram
     )
 
-    vector_map = {
-        "falcon-logprobs": lambda file: falcon_logprobs[file],
-        "trigram-logprobs": lambda file: trigram_logprobs[file],
-        "unigram-logprobs": lambda file: unigram_logprobs[file],
+    train_vector_map = {
+        "falcon-logprobs": lambda file: train_falcon_logprobs[file],
+        "trigram-logprobs": lambda file: train_trigram_logprobs[file],
+        "unigram-logprobs": lambda file: train_unigram_logprobs[file],
+    }
+    test_vector_map = {
+        "falcon-logprobs": lambda file: test_falcon_logprobs[file],
+        "trigram-logprobs": lambda file: test_trigram_logprobs[file],
+        "unigram-logprobs": lambda file: test_unigram_logprobs[file],
     }
 
     def get_exp_featurize(best_features, vector_map):
@@ -329,32 +349,33 @@ if args.classify:
 
         return exp_featurize
 
-    train_data = train_generate_dataset_fn(get_exp_featurize(best_features, vector_map))
+    print("Grabbing features")
+    train_data = train_generate_dataset_fn(get_exp_featurize(best_features, train_vector_map), verbose=True)
     train_data = normalize(train_data)
-    test_data = test_generate_dataset_fn(get_exp_featurize(best_features, vector_map))
+    test_data = test_generate_dataset_fn(get_exp_featurize(best_features, test_vector_map), verbose=True)
     test_data = normalize(test_data)
 
-    def train_lr(data, train, test):
+    def train_lr(train_data, train_indices, test_data, test_indices):
+        # train model
         model = LogisticRegression()
-        model.fit(data[train], labels[train])
-        # return f1_score(labels[test], model.predict(data[test]))
-        return roc_auc_score(labels[test], model.predict(data[test]))
+        model.fit(train_data[train], train_labels[train])
 
-    print(
-        f"In-Domain AUC: {train_lr(data, indices_dict['gpt_train'] + indices_dict['human_train'], indices_dict['gpt_test'] + indices_dict['human_test'])}"
-    )
+        # fit on test
+        preds = model.predict_proba(test_data[test]) # (n_sample, 2)
+        preds = preds[:, 1]
+        metric_score = roc_auc_score(y_true=test_labels[test], y_score=preds)
 
-    for test_domain in domains:
-        train_indices = []
-        for train_domain in domains:
-            if train_domain == test_domain:
-                continue
+        return preds, metric_score
+    
+    # user all train and all test
+    print("Fitting LR")
+    test_preds, auroc_score = train_lr(train_data, train, test_data, test)
+    print(f"{args.domain} AUROC = {auroc_score}")
 
-            train_indices += (
-                indices_dict[f"gpt_{train_domain}_train"]
-                + indices_dict[f"human_{train_domain}_train"]
-            )
-
-        print(
-            f"Out-Domain AUC ({test_domain}): {train_lr(data, train_indices, indices_dict[f'gpt_{test_domain}_test'] + indices_dict[f'human_{test_domain}_test'])}"
-        )
+    # save test set predictions
+    pred_folder = "predictions_raid_500k/"
+    os.makedirs(pred_folder, exist_ok=True)
+    pd.DataFrame({
+        "id": test_ids,
+        "score": test_preds
+    }).to_csv(os.path.join(pred_folder, f"{args.domain}.preds"), sep="\t", index=False)
