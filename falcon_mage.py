@@ -25,13 +25,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, roc_auc_score
 
 
-results_folder = "results_raid_500k"
+results_folder = "results_mage"
 os.makedirs(results_folder, exist_ok=True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--domain", type=str, required=True)
 parser.add_argument("--feature_select", action="store_true")
 parser.add_argument("--do_sample", action="store_true")
+parser.add_argument("--num_sample", type=int, default=6000, help="Number of samples to use for training if --do_sample")
 
 parser.add_argument("--classify", action="store_true")
 parser.add_argument("--features", type=str, help="File containing features line by line")
@@ -40,11 +41,11 @@ args = parser.parse_args()
 domains = [ args.domain ]
 
 train_datasets = [
-    Dataset("normal", f"data/raid_500k_{d}/train/{t}")
+    Dataset("normal", f"data/mage_{d}/train/{t}")
     for d in domains for t in ["human", "gpt"]
 ]
 test_datasets = [
-    Dataset("normal", f"data/raid_500k_{d}/test/{t}")
+    Dataset("normal", f"data/mage_{d}/test/{t}")
     for d in domains for t in ["human", "gpt"]
 ]
 
@@ -134,15 +135,16 @@ def get_all_logprobs(
     verbose=True,
     trigram=None,
     tokenizer=None,
+    split=None,
     num_tokens=511, # max_length-1
 ):
     falcon_logprobs = {}
     trigram_logprobs, unigram_logprobs = {}, {}
 
     if verbose:
-        print("Loading logprobs into memory")
+        print(f"Loading logprobs into memory, {split=}")
 
-    file_names = generate_dataset(lambda file: file, verbose=False)
+    file_names = generate_dataset(lambda file: file, verbose=False, split=split)
     to_iter = tqdm.tqdm(file_names) if verbose else file_names
 
     for file in to_iter:
@@ -186,12 +188,13 @@ test_ids = test_generate_dataset_fn(
 train = np.arange(train_labels.size)
 test = np.arange(test_labels.size)
 
-# sample 6000
-sample_size = 6000
+# sample
+sample_size = args.num_sample
 if args.do_sample:
     np.random.seed(0)
     train = np.random.choice(train, size=sample_size, replace=False)
-print(f"{len(train)=}, {len(test)=}")
+    train_labels = np.array(train_labels)[train]
+print(f"{len(train)=}, {len(train_labels)=}, {len(test)=}")
 
 
 # Construct all indices
@@ -240,6 +243,7 @@ if args.feature_select:
     ) = get_all_logprobs(
         train_generate_dataset_fn,
         verbose=True,
+        split=train,
         tokenizer=lambda x: tokenizer(x).input_ids,
         trigram=trigram
     )
@@ -271,10 +275,11 @@ if args.feature_select:
     exp_to_data = {}
     for exp in tqdm.tqdm(all_funcs):
         exp_to_data[exp] = train_generate_dataset_fn(
-            lambda file: calc_features(file, exp)
+            lambda file: calc_features(file, exp),
+            split=train
         ).reshape(-1, 1)
 
-    best_features = select_features(exp_to_data, train_labels, verbose=True, to_normalize=True, indices=train)
+    best_features = select_features(exp_to_data, train_labels, verbose=True, to_normalize=True, indices=None) # None here since we already filtered the data
     print(best_features)
     
     # save best features
@@ -307,6 +312,7 @@ if args.classify:
     ) = get_all_logprobs(
         train_generate_dataset_fn,
         verbose=True,
+        split=train,
         tokenizer=lambda x: tokenizer(x).input_ids,
         trigram=trigram
     )
@@ -350,7 +356,7 @@ if args.classify:
         return exp_featurize
 
     print("Grabbing features and applying normalization")
-    train_data = train_generate_dataset_fn(get_exp_featurize(best_features, train_vector_map), verbose=True)
+    train_data = train_generate_dataset_fn(get_exp_featurize(best_features, train_vector_map), verbose=True, split=train)
     train_data, mu, sigma = normalize(train_data, ret_mu_sigma=True)
     test_data = test_generate_dataset_fn(get_exp_featurize(best_features, test_vector_map), verbose=True)
     test_data = normalize(test_data, mu, sigma)
@@ -360,7 +366,7 @@ if args.classify:
     def train_lr(train_data, train_indices, test_data, test_indices):
         # train model
         model = LogisticRegression(max_iter=1000)
-        model.fit(train_data[train], train_labels[train])
+        model.fit(train_data, train_labels) # no need indices for splits
 
         # fit on test
         preds = model.predict_proba(test_data[test]) # (n_sample, 2)
@@ -379,7 +385,7 @@ if args.classify:
         pickle.dump({"model": model, "mu": mu, "sigma": sigma}, f)
 
     # save test set predictions
-    pred_folder = "predictions_raid_500k_maxiter1000/"
+    pred_folder = "predictions_mage/"
     pred_file = args.domain + ("_sample" if args.do_sample else "") + ".preds"
     os.makedirs(pred_folder, exist_ok=True)
     pd.DataFrame({
