@@ -15,8 +15,8 @@ exclude_ids = set([])
 MAX_LEN = 512
 model_name = "falcon-7b"
 
-data_folder = "data/mage_ood/"
-logits_file = "data/mage.logits.json"
+data_folder = "../data/mage_ood/"
+logits_file = "../data/mage.logits.json"
 prefix = "mage"
 
 with open(logits_file) as f:
@@ -25,7 +25,6 @@ with open(logits_file) as f:
 tokenizer = AutoTokenizer.from_pretrained("tiiuae/falcon-7b")
 
 # read train
-"""
 for d in os.listdir(data_folder):
     if d.endswith("json"): continue
     print(f"Processing train {d=}")
@@ -67,8 +66,6 @@ for d in os.listdir(data_folder):
             to_write += f"{w} {p}\n"
         with open(logprobfile, "w") as f:
             f.write(to_write)
-"""
-
 
 # write test files
 for d in os.listdir(data_folder):
