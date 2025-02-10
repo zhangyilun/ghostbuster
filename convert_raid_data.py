@@ -41,9 +41,10 @@ for d in os.listdir(data_folder):
     
     for _, row in tqdm(df.iterrows(), total=df.shape[0]):
         _id = row["id"]
-        if _id in exclude_ids: continue
-
         text = row["text"]
+        if _id in exclude_ids: continue
+        if len(text.split()) < 2: continue 
+
         tokenized = tokenizer.tokenize(text, truncation=True, max_length=MAX_LEN)[1:] # list[str]
         _logit = logits[_id]["logits1"][0] # list[float]
     
