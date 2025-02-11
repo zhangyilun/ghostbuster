@@ -178,7 +178,7 @@ def select_features(exp_to_data, labels, verbose=True, to_normalize=True, indice
                 get_data(*best_features, exp), labels, k=5, indices=indices
             )
 
-            if score > best_score + 1e-5: # ** add threshold
+            if score > best_score + 1e-4: # ** add threshold
                 best_score = score
                 best_exp = exp
 

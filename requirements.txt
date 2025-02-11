@@ -6,9 +6,9 @@ openai==0.28.1
 torch
 tiktoken
 flask
-tabulate
+tabulate 
 dill
 nltk
-datasets==2.16.1
-transformers==4.36.2
+datasets
+transformers
 matplotlib
